@@ -10,6 +10,7 @@
 #include <stdbool.h>
 
 #define DIRECTION_MAX 35
+#define VALUE_MAX 30
 #define BUFFER_MAX 3
 
 #define IN  0
@@ -18,7 +19,7 @@
 #define LOW  0
 #define HIGH 1
 
-#define QUANTIDADE_PADROES 2
+#define QUANTIDADE_PADROES 4
 #define PADRAO_INICIAL 'A'
 
 char padrao_atual = PADRAO_INICIAL;
@@ -39,49 +40,36 @@ int config_serial(char * device, unsigned int baudrate)
 
 	fcntl(fd, F_SETFL, 0);
 
-	/*
-	 * Get the current options for the port...
-	 */
+	//Get the current options for the port...
 	tcgetattr(fd, &options);
 
-	/* sets the terminal to something like the "raw" mode */
+	//Sets the terminal to something like the "raw" mode
 	cfmakeraw(&options);
 
-	/*
-	 * Set the baudrate...
-	 */
+	//Set the baudrate...
 	cfsetispeed(&options, baudrate);
 	cfsetospeed(&options, baudrate);
 
-	/*
-	 * Enable the receiver and set local mode...
-	 */
+	//Enable the receiver and set local mode...
 	options.c_cflag |= (CLOCAL | CREAD);
 
-	/*
-	 * No parit, 1 stop bit, size 8
-	 */
+	//No parit, 1 stop bit, size 8
 	options.c_cflag &= ~PARENB;
 	options.c_cflag &= ~CSTOPB;
 	options.c_cflag &= ~CSIZE;
 	options.c_cflag |= CS8;
 
-
-	/*
-	 * Clear old settings
-	 */
+	//Clear old settings
 	options.c_cflag &= ~CRTSCTS;
 	options.c_iflag &= ~(IXON | IXOFF | IXANY);
 
-	/* non-caninical mode */
+	//non-caninical mode
 	options.c_lflag &= ~ICANON; 
 
-	/*
-	 * Set the new options for the port...
-	 */
+	//Set the new options for the port...
 	tcsetattr(fd, TCSANOW, &options);
 
-	/* configura a tty para escritas e leituras não bloqueantes */
+	//configura a tty para escritas e leituras não bloqueantes
 	//fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 
 	return fd;
@@ -130,18 +118,19 @@ static int GPIODirection(int pin, int dir)
 {
 	static const char s_directions_str[]  = "in\0out";
 
-
 	char path[DIRECTION_MAX];
 	int fd;
 
 	snprintf(path, DIRECTION_MAX, "/sys/class/gpio/gpio%d/direction", pin);
 	fd = open(path, O_WRONLY);
-	if (-1 == fd) {
+	if (-1 == fd) 
+	{
 		fprintf(stderr, "Failed to open gpio direction for writing!\n");
 		return(-1);
 	}
 
-	if (-1 == write(fd, &s_directions_str[IN == dir ? 0 : 3], IN == dir ? 2 : 3)) {
+	if (-1 == write(fd, &s_directions_str[IN == dir ? 0 : 3], IN == dir ? 2 : 3)) 
+	{
 		fprintf(stderr, "Failed to set direction!\n");
 		return(-1);
 	}
@@ -152,19 +141,20 @@ static int GPIODirection(int pin, int dir)
 
 static int GPIORead(int pin) 
 {
-#define VALUE_MAX 30
 	char path[VALUE_MAX];
 	char value_str[3];
 	int fd;
 
 	snprintf(path, VALUE_MAX, "/sys/class/gpio/gpio%d/value", pin);
 	fd = open(path, O_RDONLY);
-	if (-1 == fd) {
+	if (-1 == fd) 
+	{
 		fprintf(stderr, "Failed to open gpio value for reading!\n");
 		return(-1);
 	}
 
-	if (-1 == read(fd, value_str, 3)) {
+	if (-1 == read(fd, value_str, 3)) 
+	{
 		fprintf(stderr, "Failed to read value!\n");
 		return(-1);
 	}
@@ -183,12 +173,14 @@ static int GPIOWrite(int pin, int value)
 
 	snprintf(path, VALUE_MAX, "/sys/class/gpio/gpio%d/value", pin);
 	fd = open(path, O_WRONLY);
-	if (-1 == fd) {
+	if (-1 == fd) 
+	{
 		fprintf(stderr, "Failed to open gpio value for writing!\n");
 		return(-1);
 	}
 
-	if (1 != write(fd, &s_values_str[LOW == value ? 0 : 1], 1)) {
+	if (1 != write(fd, &s_values_str[LOW == value ? 0 : 1], 1)) 
+	{
 		fprintf(stderr, "Failed to write value!\n");
 		return(-1);
 	}
@@ -197,7 +189,7 @@ static int GPIOWrite(int pin, int value)
 	return(0);
 }
 
-void escrever_padrao_no_serial() 
+void escrever_padrao() 
 {
 	int fd;
 
@@ -205,7 +197,7 @@ void escrever_padrao_no_serial()
 
 	if(fd < 0)
 	{
-		printf("ERRO AO TENTAR ESCREVER PADRAO NO SERIAL!!!\n");
+		printf("ERRO AO TENTAR ESCREVER NO SERIAL!!!\n");
 
 		return;
 	}
@@ -222,7 +214,13 @@ void proximo_padrao()
 		padrao_atual++;
 		contador++;
 	}
-	escrever_padrao_no_serial();
+	else
+	{
+		padrao_atual = PADRAO_INICIAL;
+		contador = 0;
+	}
+
+	escrever_padrao();
 }
 
 void padrao_anterior()
@@ -232,80 +230,109 @@ void padrao_anterior()
 		padrao_atual--;
 		contador--;
 	}
-	escrever_padrao_no_serial();
+	else
+	{
+		padrao_atual = PADRAO_INICIAL + QUANTIDADE_PADROES - 1;
+		contador = QUANTIDADE_PADROES - 1;
+	}
+
+	escrever_padrao();
 }
 
-
-void ler_contador_do_serial() 
+void ler_mudancas_de_cada_padrao() 
 {
 	int fd;
+	int i;
 
 	fd = config_serial((char*) "/dev/ttyAMA0", B9600);
 
 	if(fd < 0)
 	{
-		printf("ERRO AO TENTAR LER CONTADOR DO SERIAL!!!\n");
+		printf("ERRO AO TENTAR LER DO SERIAL!!!\n");
 
 		return;
 	}
 
 	char valor = '0';
 
-	write(fd, &valor, 1);
+	write(fd, &valor, 1);	
 
+	char padrao_aux = PADRAO_INICIAL;
+
+	printf("MUDANCAS DE CADA PADRAO -> [");
+	for(i=0; i<QUANTIDADE_PADROES; i++)
+	{
+		read(fd, &valor, 1);
+
+		printf(" %c=%d ", padrao_aux, valor);
+		padrao_aux++;
+	}
 	read(fd, &valor, 1);
-
-	printf("CONTADOR (PADRAO %c) = %d \n", padrao_atual, valor);
+	printf(" TOTAL=%d ", valor);
+	printf("]\n");
 }
 
-//void ler_contador_do_padrao_atual()
-//{
-//	escrever_no_serial_2('0');
-//	printf("CONTADOR (PADRAO %c) = %d \n", padrao_atual, ler_valor_do_serial());
-//}
+int main(int argc, char *argv[]) 
+{
+	//BOTAO DA ESQUERDA
+	int pushbutton25 = 25;
+	//BOTAO DO MEIO
+	int pushbutton24 = 24;
+	//BOTAO DA DIREITA
+	int pushbutton23 = 23;
 
-int main(int argc, char *argv[]) {
-	int pushbutton25 = 25; // b1 esquedo
-	int pushbutton24 = 24; // b2 meio
-	int pushbutton23 = 23; // b3 direita
-
-	/*
-	 * Enable GPIO pins
-	 */
+	//Enable GPIO pins
 	GPIOExport(pushbutton25);
 	GPIOExport(pushbutton24);
 	GPIOExport(pushbutton23);
 
 	while(1)
 	{
-
 		//Set GPIO directions
 		if (-1 == GPIODirection(pushbutton25, OUT))
+		{
 			return(2);
+		}
 
 		//Write GPIO value
 		if (-1 == GPIOWrite(pushbutton25, 1))
+		{
 			return(3);
+		}
 
 		//Set GPIO directions
 		if (-1 == GPIODirection(pushbutton25, IN))
+		{
 			return(2);
+		}
 
 		//23
 		if (-1 == GPIODirection(pushbutton23, OUT))
+		{
 			return(2);
+		}
 		if (-1 == GPIOWrite(pushbutton23, 1))
+		{
 			return(3);
+		}
 		if (-1 == GPIODirection(pushbutton23, IN))
+		{
 			return(2);
+		}
 
 		//24
 		if (-1 == GPIODirection(pushbutton24, OUT))
+		{
 			return(2);
+		}
 		if (-1 == GPIOWrite(pushbutton24, 1))
+		{
 			return(3);
+		}
 		if (-1 == GPIODirection(pushbutton24, IN))
+		{
 			return(2);
+		}
 
 		//CHAMADA DE FUNCAO QUANDO UM BOTAO E PRESSIONADO
 		if (GPIORead(pushbutton25) == 0)
@@ -314,7 +341,7 @@ int main(int argc, char *argv[]) {
 		}
 		else if (GPIORead(pushbutton24) == 0)
 		{
-			ler_contador_do_serial() ;		
+			ler_mudancas_de_cada_padrao();		
 		}
 		else if (GPIORead(pushbutton23) == 0)
 		{
@@ -327,11 +354,17 @@ int main(int argc, char *argv[]) {
 
 	//Disable GPIO pins
 	if (-1 == GPIOUnexport(pushbutton25))
+	{
 		return(4);
+	}
 	if (-1 == GPIOUnexport(pushbutton24))
+	{
 		return(4);
+	}
 	if (-1 == GPIOUnexport(pushbutton23))
+	{
 		return(4);
+	}
 
 	return(0);
 }
